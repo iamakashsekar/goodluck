@@ -1,19 +1,5 @@
 import { useState, useRef } from 'react';
-import emailjs from '@emailjs/browser';
 import { Send, Mail, User, Phone, MessageSquare, CheckCircle, AlertCircle, Upload, FileText, X } from 'lucide-react';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// EmailJS Configuration
-// 1. Create a free account at https://www.emailjs.com
-// 2. Add an Email Service (Gmail, Outlook, etc.) and copy the Service ID below
-// 3. Create an Email Template with these variables:
-//    {{from_name}}, {{from_email}}, {{phone}}, {{subject}}, {{message}}
-//    Set the "To Email" in the template to: sekar@goodluck.agency
-// 4. Copy your Public Key from Account > API Keys
-// ─────────────────────────────────────────────────────────────────────────────
-const EMAILJS_SERVICE_ID  = 'YOUR_SERVICE_ID';   // e.g. 'service_abc123'
-const EMAILJS_TEMPLATE_ID = 'YOUR_TEMPLATE_ID';  // e.g. 'template_xyz789'
-const EMAILJS_PUBLIC_KEY  = 'YOUR_PUBLIC_KEY';   // e.g. 'abcDEF123ghiJKL'
 
 interface ValidationErrors {
   name?: string;
@@ -149,15 +135,6 @@ export default function ContactForm() {
     if (input) input.value = '';
   };
 
-  // Convert file to base64 for EmailJS attachment
-  const fileToBase64 = (f: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve((reader.result as string).split(',')[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(f);
-    });
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setTouchedFields(new Set(['name', 'email', 'phone', 'subject', 'message']));
@@ -171,29 +148,27 @@ export default function ContactForm() {
     setErrorMessage('');
 
     try {
-      const templateParams: Record<string, string> = {
-        to_email:  'sekar@goodluck.agency',
-        from_name: formData.name,
-        from_email: formData.email,
-        phone:     formData.phone || 'Not provided',
-        subject:   formData.subject,
-        message:   formData.message,
-        reply_to:  formData.email,
-      };
-
-      // Attach resume as base64 if provided
+      const formPayload = new FormData();
+      formPayload.append('name', formData.name);
+      formPayload.append('email', formData.email);
+      formPayload.append('phone', formData.phone || '');
+      formPayload.append('subject', formData.subject);
+      formPayload.append('message', formData.message);
+      
       if (file) {
-        const base64 = await fileToBase64(file);
-        templateParams.attachment_name    = file.name;
-        templateParams.attachment_content = base64;
+        formPayload.append('file', file);
       }
 
-      await emailjs.send(
-        EMAILJS_SERVICE_ID,
-        EMAILJS_TEMPLATE_ID,
-        templateParams,
-        { publicKey: EMAILJS_PUBLIC_KEY }
-      );
+      const response = await fetch('/api/send-mail', {
+        method: 'POST',
+        body: formPayload,
+      });
+      
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to send message');
+      }
 
       setStatus('success');
       setFormData({ name: '', email: '', phone: '', subject: '', message: '' });
@@ -203,20 +178,10 @@ export default function ContactForm() {
       const fileInput = document.getElementById('file') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
       setTimeout(() => setStatus('idle'), 5000);
-    } catch (err: unknown) {
+    } catch (err: any) {
       setStatus('error');
-      const isNotConfigured =
-        EMAILJS_SERVICE_ID === 'YOUR_SERVICE_ID' ||
-        EMAILJS_TEMPLATE_ID === 'YOUR_TEMPLATE_ID' ||
-        EMAILJS_PUBLIC_KEY === 'YOUR_PUBLIC_KEY';
-      if (isNotConfigured) {
-        setErrorMessage(
-          'EmailJS is not configured yet. Please set up your Service ID, Template ID, and Public Key. See the instructions in ContactForm.tsx.'
-        );
-      } else {
-        setErrorMessage('Failed to send message. Please try again or email us directly at sekar@goodluck.agency');
-      }
-      console.error('EmailJS error:', err);
+      setErrorMessage(err.message || 'Failed to send message. Please try again or email us directly.');
+      console.error('Submission error:', err);
     }
   };
 
